@@ -5,6 +5,29 @@ const axios = require('axios');
 
 const PORT = process.env.PORT || 3001
 
+const admin = require("firebase-admin");
+
+var serviceAccount = {
+    type: process.env.type,
+    project_id: process.env.project_id,
+    private_key_id: process.env.private_key_id,
+    //@ts-ignore
+    private_key: process.env.private_key.replace(/\\n/g, '\n'),
+    client_email: process.env.client_email,
+    client_id: process.env.client_id,
+    auth_uri: process.env.auth_uri,
+    token_uri: process.env.token_uri,
+    auth_provider_x509_cert_url: process.env.auth_provider_x509_cert_url,
+    client_x509_cert_url: process.env.client_x509_cert_url,
+    universe_domain: process.env.universe_domain,
+}
+
+admin.initializeApp({
+    //@ts-ignore
+    credential: admin.credential.cert(serviceAccount),
+    projectId: process.env.project_id
+})
+
 const app = express()
 
 app.use(cors())
@@ -18,7 +41,7 @@ app.post('/payment', async (req, res) => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                "api_key": "ZXlKaGJHY2lPaUpJVXpVeE1pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SmpiR0Z6Y3lJNklrMWxjbU5vWVc1MElpd2ljSEp2Wm1sc1pWOXdheUk2T1RRNE1qUTJMQ0p1WVcxbElqb2lNVGN3TXpRd056Z3lNQzR3TWpNNU9UZ2lmUS40TTJHbEI1Q2cxZjg5TFMxem9SQk4wSU1WOGRaNWJPMUFsZ3JQazNoQkdUQXUyQTZqSm5oMHNHYnB0UXlHN0h0YzFhRUl1bENBMkpaaDRZUmpPclJ3QQ=="
+                "api_key": process.env.api_key
             })
         }
     )
@@ -27,7 +50,7 @@ app.post('/payment', async (req, res) => {
     
     const authToken = tokenResponseData.token
     
-    const { name, description, amount_cents, quantity, email, phone_number, first_name, last_name } = req.body
+    const { name, description, amount_cents, quantity, email, phone_number, first_name, last_name, studentId, programId } = req.body
     
     const orderResponse = await fetch('https://accept.paymob.com/api/ecommerce/orders',{
         method: 'POST',
@@ -81,14 +104,45 @@ app.post('/payment', async (req, res) => {
                 "state": "NA"
             },
             "currency": "EGP",
-            "integration_id": 4422174,
+            "integration_id": Number(process.env.integration_id),
             "lock_order_when_paid": "false"
         })
     })
 
     const paymentTokenData = await paymentTokenRequest.json()
 
+    const db = admin.firestore()
+
+    const newOrder = {
+        studentId,
+        programId,
+        orderId,
+        status: 'pending'
+    }
+
+    await db.collection('orders').add(newOrder)
+
     return res.status(201).json({link: `https://accept.paymob.com/api/acceptance/iframes/810705?payment_token=${paymentTokenData.token}`})
+})
+
+app.post('/callback' , async (req, res) => {
+    const { success } = req.body.obj
+    const { id: orderId } = req.body.obj.order
+    
+    if(success)
+    {
+        const db = admin.firestore()
+
+        const updatedOrder = {
+            status: 'accepted'
+        }
+
+        await db.collection('orders').where('orderId', '==', orderId).get().then((querySnapshot) => {
+            querySnapshot.docs.map((doc) => {
+                db.collection('orders').doc(doc.id).update(updatedOrder)
+            })
+        })
+    }
 })
 
 app.listen(PORT, () => {
