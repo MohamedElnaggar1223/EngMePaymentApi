@@ -33,6 +33,10 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
+app.get('/', (req, res) => {
+    return res.status(200).json('initiated server connection')
+})
+
 app.post('/payment', async (req, res) => {
     const tokenResponse = await fetch('https://accept.paymob.com/api/auth/tokens', 
         {
